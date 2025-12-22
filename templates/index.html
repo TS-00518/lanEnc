@@ -138,32 +138,41 @@
             box-shadow: 0 0 20px rgba(255, 255, 255, 1), 0 0 10px rgba(255, 255, 255, 1);
         }
         
-        /* --- New Animations for Transfer/Glow --- */
-        .flash-white {
-            animation: flash 0.5s ease-out forwards;
-        }
+        .flash-white { animation: flash 0.5s ease-out forwards; }
         @keyframes flash {
             0% { background-color: rgba(255, 255, 255, 0.8); box-shadow: 0 0 30px white; }
             100% { background-color: rgba(255, 255, 255, 0.05); box-shadow: none; }
         }
 
-        /* Entry Glow for new Queue Items */
         @keyframes slideInGlow {
-            0% {
-                background-color: rgba(255, 255, 255, 0.6);
-                box-shadow: 0 0 30px rgba(255,255,255,0.7);
-                transform: scale(1.02);
-            }
-            100% {
-                background-color: rgba(255, 255, 255, 0.05);
-                box-shadow: none;
-                transform: scale(1);
-            }
+            0% { background-color: rgba(255, 255, 255, 0.6); box-shadow: 0 0 30px rgba(255,255,255,0.7); transform: scale(1.02); }
+            100% { background-color: rgba(255, 255, 255, 0.05); box-shadow: none; transform: scale(1); }
         }
+        .queue-item-entry { animation: slideInGlow 1.5s ease-out forwards; }
         
-        /* Apply this to ALL rows, but idiomorph ensures existing rows don't re-run it */
-        .queue-item-entry {
-            animation: slideInGlow 1.5s ease-out forwards;
+        /* Custom File Input */
+        .file-input-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+        .file-input-wrapper input[type=file] {
+            font-size: 100px;
+            position: absolute;
+            left: 0;
+            top: 0;
+            opacity: 0;
+        }
+        /* Hover Effect for Upload applied to Wrapper interaction */
+        .file-input-wrapper:hover .upload-zone {
+            background-color: rgba(255, 255, 255, 0.1);
+            border-color: rgba(168, 85, 247, 0.5);
+            box-shadow: 0 0 20px rgba(168, 85, 247, 0.2), inset 0 0 20px rgba(168, 85, 247, 0.1);
+        }
+        .file-input-wrapper:hover i {
+            transform: scale(1.2);
+            color: #d8b4fe;
+            filter: drop-shadow(0 0 5px #a855f7);
         }
     </style>
 </head>
@@ -183,34 +192,22 @@
                 </div>
             </div>
 
-            <!-- Path Controls -->
+            <!-- Upload Controls -->
             <div class="flex flex-col items-end gap-4 w-1/2">
-                <div class="flex w-full gap-4">
-                    <button hx-post="/browse" hx-target="#path-input" hx-swap="outerHTML"
-                            class="px-6 py-3 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white transition-all duration-300 text-base font-light text-slate-300 backdrop-blur-sm">
-                        <i class="fas fa-folder-open mr-2"></i> Browse
-                    </button>
-                    
-                    <form hx-post="/set_path" hx-target="body" class="flex-1 flex gap-3">
-                        <input type="text" id="path-input" name="path" value="{{ watch_dir or '' }}" 
-                               placeholder="Select source directory..." 
-                               class="flex-1 bg-white/5 border border-white/10 text-slate-100 text-base rounded-xl px-5 py-3 focus:outline-none focus:border-white/30 focus:bg-white/10 transition-all placeholder-slate-600 font-light backdrop-blur-sm shadow-inner">
-                        <button type="submit" class="px-8 py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white text-base font-medium transition-all duration-300 hover:shadow-[0_0_20px_rgba(255,255,255,0.1)] backdrop-blur-sm">
-                            Set Path
+                <form action="/upload" method="post" enctype="multipart/form-data" class="flex w-full gap-4 justify-end">
+                    <div class="file-input-wrapper w-full">
+                        <button type="button" class="upload-zone w-full px-6 py-4 rounded-xl bg-white/5 border border-white/10 transition-all duration-300 text-base font-light text-slate-300 backdrop-blur-sm flex items-center justify-between group cursor-pointer">
+                            <span class="pointer-events-none group-hover:translate-x-1 transition-transform">
+                                <i class="fas fa-cloud-upload-alt mr-3 text-indigo-400 transition-all duration-300"></i> Drop files here or click to upload
+                            </span>
+                            <span class="text-xs uppercase font-bold tracking-widest text-slate-500 bg-white/5 px-2 py-1 rounded">Multi-file</span>
                         </button>
-                    </form>
-                </div>
+                        <input type="file" name="files" multiple onchange="this.form.submit()" title="Select Files to Transcode" class="cursor-pointer" />
+                    </div>
+                </form>
             </div>
         </div>
 
-        {% if error %}
-        <div class="glass-panel border-l-2 border-red-500 text-red-200 p-6 rounded-xl mb-8 flex items-center gap-4 text-lg animate-fade-in">
-            <i class="fas fa-exclamation-circle text-red-500"></i>
-            {{ error }}
-        </div>
-        {% endif %}
-
-        {% if watch_dir %}
         <!-- Dashboard Grid -->
         <div class="grid grid-cols-12 gap-8 flex-1 min-h-0">
             
@@ -306,7 +303,7 @@
             <div class="col-span-4 glass-panel rounded-3xl p-8 flex flex-col h-full">
                 <div class="flex justify-between items-center mb-8 pb-4 border-b border-white/10">
                     <h2 class="text-xl font-light text-white flex items-center gap-3 tracking-widest">
-                        <i class="fas fa-film text-white/40 text-sm"></i> LIBRARY
+                        <i class="fas fa-film text-white/40 text-sm"></i> UPLOADS
                     </h2>
                     <button hx-get="/files_list" hx-target="#file-list" 
                             onclick="var icon = this.querySelector('i'); icon.style.transform = 'rotate(' + (icon.dataset.rot = (parseInt(icon.dataset.rot)||0)+180) + 'deg)'"
@@ -339,55 +336,67 @@
                         <tbody hx-get="/" hx-select="tbody" hx-trigger="every 1s, update-queue from:body" hx-ext="morph" hx-swap="morph:outerHTML" class="text-base font-light">
                             {% for job in queue %}
                             <!-- Added queue-item-entry class for animation -->
-                            <tr id="job-{{ job[0] }}" class="group transition-all duration-300 queue-item-entry">
+                            <tr id="job-{{ job.id }}" class="group transition-all duration-300 queue-item-entry relative z-10 hover:z-20">
                                 <td class="py-4 pl-4 rounded-l-2xl bg-white/5 border-l border-y border-white/5 group-hover:bg-white/10 group-hover:border-white/20 transition-all align-middle backdrop-blur-sm">
-                                    <div class="truncate max-w-[160px] text-slate-300 group-hover:text-white transition-colors font-normal tracking-wide" title="{{ job[1] }}">
-                                        {{ job[1] }}
+                                    <div class="truncate max-w-[160px] text-slate-300 group-hover:text-white transition-colors font-normal tracking-wide" title="{{ job.filename }}">
+                                        {{ job.filename }}
                                     </div>
                                 </td>
                                 
                                 <td class="py-4 pr-6 bg-white/5 border-y border-white/5 group-hover:bg-white/10 group-hover:border-white/20 transition-all align-middle backdrop-blur-sm">
-                                    {% if job[2] == 'ENCODING' %}
+                                    <div class="min-h-[2.5rem] flex flex-col justify-center">
+                                    {% if job.status == 'ENCODING' %}
                                         <div class="relative w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                                            <div class="absolute top-0 left-0 h-full bg-white transition-all duration-500 shadow-[0_0_15px_rgba(255,255,255,0.8)]" style="width: {{ job[3] }}%"></div>
+                                            <div class="absolute top-0 left-0 h-full bg-white transition-all duration-500 shadow-[0_0_15px_rgba(255,255,255,0.8)]" style="width: {{ job.progress }}%"></div>
                                             <div class="absolute top-0 left-0 h-full w-full bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" style="animation-delay: 0.5s"></div>
                                         </div>
                                         <div class="flex justify-between items-center mt-2.5">
                                             <span class="text-[10px] font-bold text-white animate-pulse tracking-[0.15em] uppercase">Processing</span>
-                                            <span class="text-xs font-mono text-slate-300">{{ job[3] }}%</span>
+                                            <div class="text-right">
+                                                <span class="text-xs font-mono text-emerald-400 mr-2">{{ job.elapsed_time if job.elapsed_time else '0s' }}</span>
+                                                <span class="text-xs font-mono text-slate-300">{{ job.progress }}%</span>
+                                            </div>
                                         </div>
-                                    {% elif job[2] == 'MANUAL_PAUSE' %}
-                                        <div class="inline-flex items-center px-3 py-1.5 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 text-[10px] font-bold tracking-widest uppercase">
+                                    {% elif job.status == 'MANUAL_PAUSE' %}
+                                        <div class="inline-flex items-center px-3 py-1.5 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 text-[10px] font-bold tracking-widest uppercase self-start">
                                             <i class="fas fa-pause mr-2 text-[8px]"></i> PAUSED
                                         </div>
-                                    {% elif job[2] == 'PENDING' %}
-                                        <div class="inline-flex items-center px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 text-slate-400 text-[10px] font-bold tracking-widest uppercase">
+                                    {% elif job.status == 'PENDING' %}
+                                        <div class="inline-flex items-center px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 text-slate-400 text-[10px] font-bold tracking-widest uppercase self-start">
                                             <i class="fas fa-clock mr-2 text-[8px]"></i> QUEUED
                                         </div>
-                                    {% elif job[2] == 'COMPLETED' %}
-                                        <div class="inline-flex items-center px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[10px] font-bold tracking-widest uppercase">
-                                            <i class="fas fa-check mr-2 text-[8px]"></i> DONE
+                                    {% elif job.status == 'COMPLETED' %}
+                                        <div class="flex flex-col gap-1 w-full">
+                                            <a href="/download/{{ job.filename }}" class="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-300 text-[10px] font-bold tracking-widest uppercase transition-all duration-300 hover:shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                                                <i class="fas fa-download mr-2 text-[8px]"></i> Download
+                                            </a>
+                                            {% if job.elapsed_time %}
+                                            <div class="text-[9px] text-slate-500 text-center font-mono">
+                                                <i class="fas fa-stopwatch mr-1"></i>{{ job.elapsed_time }}
+                                            </div>
+                                            {% endif %}
                                         </div>
-                                    {% elif job[2] == 'FAILED' %}
-                                        <div class="inline-flex items-center px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-[10px] font-bold tracking-widest uppercase">
+                                    {% elif job.status == 'FAILED' %}
+                                        <div class="inline-flex items-center px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-[10px] font-bold tracking-widest uppercase self-start">
                                             <i class="fas fa-times mr-2 text-[8px]"></i> ERROR
                                         </div>
                                     {% endif %}
+                                    </div>
                                 </td>
 
                                 <td class="py-4 pr-4 rounded-r-2xl bg-white/5 border-r border-y border-white/5 group-hover:bg-white/10 group-hover:border-white/20 transition-all text-right align-middle backdrop-blur-sm">
                                     <div class="flex justify-end gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
-                                        {% if job[2] == 'ENCODING' %}
-                                            <button hx-post="/control/{{ job[0] }}/pause" class="w-9 h-9 rounded-lg bg-white/5 hover:bg-yellow-500/20 text-slate-400 hover:text-yellow-200 flex items-center justify-center transition-all border border-transparent hover:border-yellow-500/30" title="Pause">
+                                        {% if job.status == 'ENCODING' %}
+                                            <button hx-post="/control/{{ job.id }}/pause" class="w-9 h-9 rounded-lg bg-white/5 hover:bg-yellow-500/20 text-slate-400 hover:text-yellow-200 flex items-center justify-center transition-all border border-transparent hover:border-yellow-500/30" title="Pause">
                                                 <i class="fas fa-pause text-[10px]"></i>
                                             </button>
-                                        {% elif job[2] == 'MANUAL_PAUSE' %}
-                                            <button hx-post="/control/{{ job[0] }}/resume" class="w-9 h-9 rounded-lg bg-white/5 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-200 flex items-center justify-center transition-all border border-transparent hover:border-emerald-500/30" title="Resume">
+                                        {% elif job.status == 'MANUAL_PAUSE' %}
+                                            <button hx-post="/control/{{ job.id }}/resume" class="w-9 h-9 rounded-lg bg-white/5 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-200 flex items-center justify-center transition-all border border-transparent hover:border-emerald-500/30" title="Resume">
                                                 <i class="fas fa-play text-[10px] pl-0.5"></i>
                                             </button>
                                         {% endif %}
                                         
-                                        <button hx-post="/control/{{ job[0] }}/delete" class="w-9 h-9 rounded-lg bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-300 flex items-center justify-center transition-all border border-transparent hover:border-red-500/30" title="Remove">
+                                        <button hx-post="/control/{{ job.id }}/delete" class="w-9 h-9 rounded-lg bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-300 flex items-center justify-center transition-all border border-transparent hover:border-red-500/30" title="Remove">
                                             <i class="fas fa-trash text-[10px]"></i>
                                         </button>
                                     </div>
@@ -407,7 +416,6 @@
                 </div>
             </div>
         </div>
-        {% endif %}
     </div>
 
     <script>

@@ -4,21 +4,23 @@ import subprocess
 import threading
 import time
 import sqlite3
-import json
-import tkinter as tk
-from tkinter import filedialog
 import psutil
 import re
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from typing import List
+from fastapi import FastAPI, Request, Form, UploadFile, File
+from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from fastapi.staticfiles import StaticFiles
 from gpu_mon import GPUWatchdog
 
 # --- CONFIGURATION ---
+UPLOAD_DIR = "uploads"
 DEFAULT_CODEC_FALLBACK = "hevc_nvenc" 
 OUTPUT_SUFFIX = "_compressed"
 OUTPUT_EXT = ".mp4" 
+
+# Ensure upload directory exists
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -50,16 +52,14 @@ def get_video_duration(input_path):
             startupinfo = subprocess.STARTUPINFO()
             startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
-            print(f"DEBUG: Running ffprobe on: {input_path}", flush=True)
             result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
                                     universal_newlines=True, startupinfo=startupinfo)
             
             val = result.stdout.strip()
             if val and val != "N/A":
-                print(f"DEBUG: ffprobe duration: {val}", flush=True)
                 return float(val)
     except Exception as e:
-        print(f"DEBUG: ffprobe failed: {e}", flush=True)
+        print(f"DEBUG: ffprobe failed: {e}")
 
     try:
         cmd = [FFMPEG_BIN, "-i", input_path]
@@ -72,45 +72,39 @@ def get_video_duration(input_path):
         match = re.search(r"Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})", result.stderr)
         if match:
             hours, minutes, seconds = map(float, match.groups())
-            total_seconds = hours * 3600 + minutes * 60 + seconds
-            print(f"DEBUG: ffmpeg parsed duration: {total_seconds}", flush=True)
-            return total_seconds
+            return hours * 3600 + minutes * 60 + seconds
     except Exception as e:
-        print(f"DEBUG: ffmpeg fallback failed: {e}", flush=True)
+        print(f"DEBUG: ffmpeg fallback failed: {e}")
 
     return 0
 
 # --- STARTUP CHECKS ---
 def check_binaries():
     global FFMPEG_BIN, FFPROBE_BIN
-    print("--- STARTUP CHECK ---", flush=True)
+    print("--- STARTUP CHECK ---")
     
     local_ffmpeg = os.path.join(os.getcwd(), "ffmpeg.exe")
     if os.path.exists(local_ffmpeg):
-        print(f"📍 Found local 'ffmpeg.exe'.", flush=True)
         FFMPEG_BIN = local_ffmpeg
     elif shutil.which("ffmpeg"):
         FFMPEG_BIN = "ffmpeg"
     else:
-        print("❌ CRITICAL: 'ffmpeg' not found.", flush=True)
+        print("❌ CRITICAL: 'ffmpeg' not found.")
 
     local_ffprobe = os.path.join(os.getcwd(), "ffprobe.exe")
     if os.path.exists(local_ffprobe):
-        print(f"📍 Found local 'ffprobe.exe'.", flush=True)
         FFPROBE_BIN = local_ffprobe
     elif shutil.which("ffprobe"):
         FFPROBE_BIN = "ffprobe"
     else:
-        print("⚠️ WARNING: 'ffprobe' not found. Trying to locate...", flush=True)
         if "ffmpeg.exe" in FFMPEG_BIN:
             guess = FFMPEG_BIN.replace("ffmpeg.exe", "ffprobe.exe")
             if os.path.exists(guess):
                  FFPROBE_BIN = guess
-                 print(f"   (Fixed) Found ffprobe at: {guess}", flush=True)
 
 def detect_hardware_codecs():
     global AVAILABLE_CODECS, FFMPEG_BIN
-    print("--- DETECTING HARDWARE SUPPORT ---", flush=True)
+    print("--- DETECTING HARDWARE SUPPORT ---")
     
     candidates = [
         ("av1_nvenc", "AV1 (NVENC)"),
@@ -121,7 +115,6 @@ def detect_hardware_codecs():
     verified = []
     
     for cid, cname in candidates:
-        print(f"Testing {cid}...", end=" ", flush=True)
         try:
             cmd = [
                 FFMPEG_BIN, "-y", "-v", "error", 
@@ -137,20 +130,15 @@ def detect_hardware_codecs():
                                     universal_newlines=True, startupinfo=startupinfo)
             
             if result.returncode == 0:
-                print("✅ Supported", flush=True)
                 verified.append({"id": cid, "name": cname})
-            else:
-                print(f"❌ Failed.", flush=True)
-        except Exception as e:
-            print(f"❌ Error: {e}", flush=True)
+        except Exception:
+            pass
             
     if not verified:
-        print("⚠️ No Hardware Codecs detected! Fallback to CPU.", flush=True)
         verified.append({"id": "libx265", "name": "H.265 (CPU - Slow)"})
         
     AVAILABLE_CODECS = verified
 
-# Run checks on load
 check_binaries()
 detect_hardware_codecs()
 
@@ -159,10 +147,16 @@ def init_db():
     conn = sqlite3.connect("queue.db", check_same_thread=False)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS queue 
-                 (id INTEGER PRIMARY KEY, filename TEXT, status TEXT, progress INTEGER)''')
+                 (id INTEGER PRIMARY KEY, filename TEXT, status TEXT, progress INTEGER, elapsed_time TEXT, start_time REAL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS config 
                  (key TEXT PRIMARY KEY, value TEXT)''')
     
+    try: c.execute("ALTER TABLE queue ADD COLUMN elapsed_time TEXT")
+    except sqlite3.OperationalError: pass 
+    
+    try: c.execute("ALTER TABLE queue ADD COLUMN start_time REAL")
+    except sqlite3.OperationalError: pass
+
     best_codec = AVAILABLE_CODECS[0]["id"] if AVAILABLE_CODECS else DEFAULT_CODEC_FALLBACK
 
     defaults = {
@@ -177,15 +171,6 @@ def init_db():
 
     c.execute("UPDATE config SET value='p7' WHERE key='preset' AND value='p6'")
 
-    c.execute("SELECT value FROM config WHERE key='codec'")
-    row = c.fetchone()
-    if row:
-        stored_codec = row[0]
-        valid_ids = [x['id'] for x in AVAILABLE_CODECS]
-        if valid_ids and stored_codec not in valid_ids:
-            print(f"DEBUG: Resetting codec to '{valid_ids[0]}'", flush=True)
-            c.execute("UPDATE config SET value=? WHERE key='codec'", (valid_ids[0],))
-
     c.execute("UPDATE queue SET status='PENDING', progress=0 WHERE status='ENCODING' OR status='MANUAL_PAUSE'")
     conn.commit()
     conn.close()
@@ -193,13 +178,15 @@ def init_db():
 init_db()
 
 def get_db():
-    return sqlite3.connect("queue.db", check_same_thread=False)
+    conn = sqlite3.connect("queue.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row 
+    return conn
 
 def get_config_value(key):
     db = get_db()
     row = db.execute("SELECT value FROM config WHERE key=?", (key,)).fetchone()
     db.close()
-    return row[0] if row else None
+    return row["value"] if row else None
 
 def set_config_value(key, value):
     db = get_db()
@@ -207,24 +194,42 @@ def set_config_value(key, value):
     db.commit()
     db.close()
 
-def update_job_status(job_id, status, progress=None):
+def update_job_status(job_id, status, progress=None, elapsed_time=None, start_time=None):
     db = get_db()
+    params = [status]
+    query = "UPDATE queue SET status=?"
+    
     if progress is not None:
-        db.execute("UPDATE queue SET status=?, progress=? WHERE id=?", (status, progress, job_id))
-    else:
-        db.execute("UPDATE queue SET status=? WHERE id=?", (status, job_id))
+        query += ", progress=?"
+        params.append(progress)
+    
+    if elapsed_time is not None:
+        query += ", elapsed_time=?"
+        params.append(elapsed_time)
+        
+    if start_time is not None:
+        query += ", start_time=?"
+        params.append(start_time)
+
+    query += " WHERE id=?"
+    params.append(job_id)
+    
+    db.execute(query, tuple(params))
     db.commit()
     db.close()
+
+def format_duration(seconds):
+    if not seconds: return "0s"
+    m, s = divmod(int(seconds), 60)
+    if m > 60:
+        h, m = divmod(m, 60)
+        return f"{h}h {m}m {s}s"
+    return f"{m}m {s}s"
 
 # --- WORKER LOOP ---
 def worker():
     global ACTIVE_JOBS
     while True:
-        watch_dir = get_config_value("watch_dir")
-        if not watch_dir or not os.path.exists(watch_dir):
-            time.sleep(2)
-            continue
-
         db = get_db()
         job = db.execute("SELECT id, filename FROM queue WHERE status='PENDING' LIMIT 1").fetchone()
         db.close()
@@ -233,14 +238,19 @@ def worker():
             time.sleep(2)
             continue
 
-        job_id, filename = job
-        input_path = os.path.join(watch_dir, filename)
-        output_filename = os.path.splitext(filename)[0] + OUTPUT_SUFFIX + OUTPUT_EXT
-        output_path = os.path.join(watch_dir, output_filename)
+        job_id = job["id"]
+        filename = job["filename"]
+        input_path = os.path.join(UPLOAD_DIR, filename)
+        
+        if not os.path.exists(input_path):
+            print(f"ERROR: File not found {input_path}")
+            update_job_status(job_id, "FAILED", 0)
+            continue
 
-        print(f"DEBUG: Calculating Duration for {filename}", flush=True)
+        output_filename = os.path.splitext(filename)[0] + OUTPUT_SUFFIX + OUTPUT_EXT
+        output_path = os.path.join(UPLOAD_DIR, output_filename)
+
         total_duration = get_video_duration(input_path)
-        print(f"DEBUG: Duration found: {total_duration}s", flush=True)
 
         cq = get_config_value("cq") or "24"
         preset = get_config_value("preset") or "p7"
@@ -256,7 +266,8 @@ def worker():
         else:
             codec = DEFAULT_CODEC_FALLBACK
 
-        update_job_status(job_id, "ENCODING", 0)
+        start_ts = time.time()
+        update_job_status(job_id, "ENCODING", 0, start_time=start_ts)
 
         cmd = [
             FFMPEG_BIN, "-y", "-hide_banner", "-loglevel", "error",
@@ -269,7 +280,6 @@ def worker():
         if "nvenc" in codec:
             cmd.extend(["-rc", "vbr", "-cq", cq, "-b:v", "0"])
             
-            # --- HIGH QUALITY MODE (RTX 50/40 Series Optimized) ---
             if preset == "p7":
                 cmd.extend([
                     "-multipass", "2", 
@@ -284,8 +294,6 @@ def worker():
         elif res == "720p": cmd.extend(["-vf", "scale=-1:720"])
         
         cmd.extend(["-c:a", "copy", output_path])
-
-        print(f"DEBUG: Starting Job #{job_id} using {codec}", flush=True)
 
         try:
             startupinfo = subprocess.STARTUPINFO()
@@ -307,11 +315,10 @@ def worker():
                 db.close()
 
                 if not current_status_row:
-                    print("DEBUG: Job deleted from DB. Killing process.", flush=True)
                     proc.kill()
                     break
                 
-                status = current_status_row[0]
+                status = current_status_row["status"]
 
                 if status == "MANUAL_PAUSE":
                     try:
@@ -352,14 +359,13 @@ def worker():
                 del ACTIVE_JOBS[job_id]
 
             if proc.returncode == 0:
-                print(f"DEBUG: Job #{job_id} Completed.", flush=True)
-                update_job_status(job_id, "COMPLETED", 100)
+                final_elapsed = format_duration(time.time() - start_ts)
+                update_job_status(job_id, "COMPLETED", 100, elapsed_time=final_elapsed)
             elif proc.returncode != 0 and current_status_row: 
-                print(f"DEBUG: Job #{job_id} FAILED/CANCELLED. Output:\n{proc.stdout.read()}", flush=True)
                 update_job_status(job_id, "FAILED", 0)
 
         except Exception as e:
-            print(f"CRITICAL ERROR: {e}", flush=True)
+            print(f"CRITICAL ERROR: {e}")
             update_job_status(job_id, "ERROR", 0)
             if job_id in ACTIVE_JOBS:
                 del ACTIVE_JOBS[job_id]
@@ -371,8 +377,6 @@ t.start()
 
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    watch_dir = get_config_value("watch_dir")
-    
     settings = {
         "cq": get_config_value("cq") or "24",
         "preset": get_config_value("preset") or "p7",
@@ -381,49 +385,86 @@ async def home(request: Request):
     }
 
     files = []
-    error = None
-    if watch_dir and os.path.exists(watch_dir):
+    if os.path.exists(UPLOAD_DIR):
         try:
-            files = sorted([f for f in os.listdir(watch_dir) 
-                           if f.lower().endswith(('.mkv', '.mp4', '.avi', '.mov', '.webm'))])
-        except Exception as e: error = str(e)
+            files = sorted([f for f in os.listdir(UPLOAD_DIR) 
+                           if f.lower().endswith(('.mkv', '.mp4', '.avi', '.mov', '.webm')) 
+                           and OUTPUT_SUFFIX not in f])
+        except Exception: pass
     
     db = get_db()
-    queue = db.execute("SELECT * FROM queue").fetchall()
+    rows = db.execute("SELECT * FROM queue").fetchall()
     db.close()
+    
+    queue = []
+    current_time = time.time()
+    for row in rows:
+        r = dict(row)
+        if r["status"] == "ENCODING" and r["start_time"]:
+            r["elapsed_time"] = format_duration(current_time - r["start_time"])
+        queue.append(r)
     
     return templates.TemplateResponse("index.html", {
         "request": request, 
         "files": files, 
         "queue": queue, 
-        "watch_dir": watch_dir, 
-        "error": error, 
         "settings": settings,
         "codecs": AVAILABLE_CODECS
     })
 
-# THE FIX: Added No-Cache headers to prevent browser from showing stale file list
+@app.post("/upload")
+async def upload_files(files: List[UploadFile] = File(...)):
+    if not os.path.exists(UPLOAD_DIR):
+        os.makedirs(UPLOAD_DIR)
+        
+    for file in files:
+        if not file.filename: continue
+        file_location = os.path.join(UPLOAD_DIR, file.filename)
+        with open(file_location, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+    return RedirectResponse(url="/", status_code=303)
+
+@app.post("/delete_upload")
+async def delete_upload(request: Request, filename: str = Form(...)):
+    if filename:
+        safe_filename = os.path.basename(filename) 
+        file_path = os.path.join(UPLOAD_DIR, safe_filename)
+        
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                output_name = os.path.splitext(safe_filename)[0] + OUTPUT_SUFFIX + OUTPUT_EXT
+                output_path = os.path.join(UPLOAD_DIR, output_name)
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+            except Exception as e:
+                print(f"Error deleting file: {e}")
+            
+    return await files_list(request)
+
+@app.get("/download/{filename}")
+async def download_file(filename: str):
+    output_filename = os.path.splitext(filename)[0] + OUTPUT_SUFFIX + OUTPUT_EXT
+    file_path = os.path.join(UPLOAD_DIR, output_filename)
+    
+    if os.path.exists(file_path):
+        return FileResponse(file_path, filename=output_filename)
+    return HTMLResponse("File not found or encoding not complete.", status_code=404)
+
 @app.get("/files_list", response_class=HTMLResponse)
 async def files_list(request: Request):
-    watch_dir = get_config_value("watch_dir")
-    print(f"DEBUG: Refreshing file list from: {watch_dir}", flush=True)
     files = []
-    
-    if watch_dir and os.path.exists(watch_dir):
+    if os.path.exists(UPLOAD_DIR):
         try:
-            files = sorted([f for f in os.listdir(watch_dir) 
-                           if f.lower().endswith(('.mkv', '.mp4', '.avi', '.mov', '.webm'))])
-        except Exception as e:
-            print(f"Error reading dir: {e}", flush=True)
+            files = sorted([f for f in os.listdir(UPLOAD_DIR) 
+                           if f.lower().endswith(('.mkv', '.mp4', '.avi', '.mov', '.webm'))
+                           and OUTPUT_SUFFIX not in f])
+        except Exception: pass
     
     response = templates.TemplateResponse("partials/file_list.html", {"request": request, "files": files})
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     return response
-
-@app.post("/set_path")
-async def set_path(path: str = Form(...)):
-    set_config_value("watch_dir", path.strip())
-    return RedirectResponse(url="/", status_code=303)
 
 @app.post("/save_settings")
 async def save_settings(cq: str = Form(...), preset: str = Form(...), resolution: str = Form(...), codec: str = Form(...)):
@@ -433,15 +474,6 @@ async def save_settings(cq: str = Form(...), preset: str = Form(...), resolution
     set_config_value("codec", codec)
     return HTMLResponse(content="<span class='text-green-400 text-xs ml-2'>Saved!</span>")
 
-@app.post("/browse")
-async def browse_folder():
-    try:
-        root = tk.Tk(); root.withdraw(); root.attributes('-topmost', True)
-        folder = filedialog.askdirectory(); root.destroy()
-        if folder: return HTMLResponse(f"""<input type="text" name="path" value="{os.path.normpath(folder)}" class="bg-gray-800 text-sm p-2 rounded w-full border border-gray-600">""")
-    except: pass
-    return HTMLResponse(f"""<input type="text" name="path" placeholder="Error" class="bg-gray-800 text-sm p-2 rounded w-full">""")
-
 @app.post("/add")
 async def add_job(filename: str = Form(...)):
     db = get_db()
@@ -450,21 +482,41 @@ async def add_job(filename: str = Form(...)):
         db.execute("INSERT INTO queue (filename, status, progress) VALUES (?, 'PENDING', 0)", (filename,))
         db.commit()
     db.close()
-    # FIX: Remove HX-Refresh to prevent full page reload
-    # Added HX-Trigger to force queue table update immediately
     return HTMLResponse(content="", headers={"HX-Trigger": "update-queue"})
 
 @app.post("/control/{job_id}/{action}")
 async def job_control(job_id: int, action: str):
-    print(f"Control Request: {action} Job #{job_id}", flush=True)
     db = get_db()
     
     if action == "delete":
+        # 1. Kill Process FIRST
         if job_id in ACTIVE_JOBS:
-            print(f"DEBUG: Immediate Kill requested for Job #{job_id}", flush=True)
-            try:
+            try: 
                 ACTIVE_JOBS[job_id].kill()
+                # Wait briefly for process to die and release file handle
+                ACTIVE_JOBS[job_id].wait(timeout=2) 
             except: pass
+            
+        # 2. Get details and delete files
+        row = db.execute("SELECT filename FROM queue WHERE id=?", (job_id,)).fetchone()
+        if row:
+            filename = row["filename"]
+            output_filename = os.path.splitext(filename)[0] + OUTPUT_SUFFIX + OUTPUT_EXT
+            output_path = os.path.join(UPLOAD_DIR, output_filename)
+            
+            # Now try to delete the unfinished file
+            if os.path.exists(output_path):
+                try: 
+                    # Add a small retry loop for file locks
+                    for _ in range(3):
+                        try:
+                            os.remove(output_path)
+                            break
+                        except PermissionError:
+                            time.sleep(0.5)
+                except: pass
+        
+        # 3. Remove from DB
         db.execute("DELETE FROM queue WHERE id=?", (job_id,))
 
     elif action == "pause":
@@ -475,7 +527,6 @@ async def job_control(job_id: int, action: str):
         
     db.commit()
     db.close()
-    # FIX: Trigger queue update instead of refreshing
     return HTMLResponse(content="", headers={"HX-Trigger": "update-queue"})
 
 @app.get("/status_bar")
