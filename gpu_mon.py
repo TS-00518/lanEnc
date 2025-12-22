@@ -12,6 +12,9 @@ logger = logging.getLogger("watchdog")
 
 class GPUWatchdog:
     def __init__(self):
+        # Track which PIDs we have explicitly paused
+        self._paused_pids = set()
+        
         try:
             pynvml.nvmlInit()
             self.handle = pynvml.nvmlDeviceGetHandleByIndex(GPU_INDEX)
@@ -33,31 +36,38 @@ class GPUWatchdog:
         Checks GPU load and Pauses/Resumes the FFmpeg PID.
         Returns: 'RUNNING' | 'PAUSED' | 'KILLED'
         """
+        # Cleanup if process is dead
         if not pid or not psutil.pid_exists(pid):
+            if pid in self._paused_pids:
+                self._paused_pids.remove(pid)
             return "DEAD"
 
         proc = psutil.Process(pid)
         load = self.get_3d_load()
 
-        # Check current status
-        is_suspended = False
-        try:
-            # Windows hack to check if suspended
-            if proc.status() == psutil.STATUS_STOPPED: 
-                is_suspended = True
-        except:
-            pass
-
+        # CASE 1: Gaming detected -> PAUSE
         if load > GAMING_THRESHOLD:
-            if not is_suspended:
+            # Only suspend if we haven't already tracked it as paused
+            if pid not in self._paused_pids:
                 logger.warning(f"High GPU Load ({load}%). Pausing FFmpeg...")
-                proc.suspend()
+                try:
+                    proc.suspend()
+                    self._paused_pids.add(pid)
+                except Exception as e:
+                    logger.error(f"Failed to suspend: {e}")
             return "PAUSED"
         
+        # CASE 2: GPU is free -> RESUME
         elif load < RESUME_THRESHOLD:
-            if is_suspended:
+            # Only resume if WE paused it (prevents spamming resume calls)
+            if pid in self._paused_pids:
                 logger.info(f"GPU Load Normalized ({load}%). Resuming FFmpeg...")
-                proc.resume()
+                try:
+                    proc.resume()
+                    self._paused_pids.remove(pid)
+                except Exception as e:
+                    logger.error(f"Failed to resume: {e}")
             return "RUNNING"
             
-        return "PAUSED" if is_suspended else "RUNNING"
+        # CASE 3: Hysteresis zone (60-75%) -> Maintain current state
+        return "PAUSED" if pid in self._paused_pids else "RUNNING"

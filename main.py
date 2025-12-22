@@ -21,6 +21,7 @@ OUTPUT_SUFFIX = "_compressed"
 OUTPUT_EXT = ".mp4" 
 
 app = FastAPI()
+# Update directory to include root so we can access partials easily
 templates = Jinja2Templates(directory="templates")
 watchdog = GPUWatchdog()
 
@@ -37,7 +38,6 @@ def get_video_duration(input_path):
     """Returns video duration in seconds using ffprobe, falling back to ffmpeg"""
     global FFPROBE_BIN, FFMPEG_BIN
     
-    # 1. Try FFprobe
     try:
         probe_exe = FFPROBE_BIN
         if not os.path.exists(probe_exe) and shutil.which("ffprobe"):
@@ -62,8 +62,6 @@ def get_video_duration(input_path):
     except Exception as e:
         print(f"DEBUG: ffprobe failed: {e}", flush=True)
 
-    # 2. Fallback: Try ffmpeg (parse stderr)
-    print("DEBUG: ffprobe failed or not found. Trying ffmpeg fallback...", flush=True)
     try:
         cmd = [FFMPEG_BIN, "-i", input_path]
         startupinfo = subprocess.STARTUPINFO()
@@ -112,7 +110,6 @@ def check_binaries():
                  print(f"   (Fixed) Found ffprobe at: {guess}", flush=True)
 
 def detect_hardware_codecs():
-    """Tests GPU support by running a tiny dummy encode"""
     global AVAILABLE_CODECS, FFMPEG_BIN
     print("--- DETECTING HARDWARE SUPPORT ---", flush=True)
     
@@ -127,8 +124,6 @@ def detect_hardware_codecs():
     for cid, cname in candidates:
         print(f"Testing {cid}...", end=" ", flush=True)
         try:
-            # Attempt to encode 1 second of black video using standard settings
-            # -pix_fmt yuv420p is critical for NVENC compliance test
             cmd = [
                 FFMPEG_BIN, "-y", "-v", "error", 
                 "-f", "lavfi", "-i", "color=c=black:s=1280x720:d=1",
@@ -146,8 +141,7 @@ def detect_hardware_codecs():
                 print("✅ Supported", flush=True)
                 verified.append({"id": cid, "name": cname})
             else:
-                print(f"❌ Failed. Error output:", flush=True)
-                print(result.stderr.strip(), flush=True)
+                print(f"❌ Failed.", flush=True)
         except Exception as e:
             print(f"❌ Error: {e}", flush=True)
             
@@ -156,7 +150,6 @@ def detect_hardware_codecs():
         verified.append({"id": "libx265", "name": "H.265 (CPU - Slow)"})
         
     AVAILABLE_CODECS = verified
-    print("----------------------------------", flush=True)
 
 # Run checks on load
 check_binaries()
@@ -171,7 +164,6 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS config 
                  (key TEXT PRIMARY KEY, value TEXT)''')
     
-    # Pick best available codec as default
     best_codec = AVAILABLE_CODECS[0]["id"] if AVAILABLE_CODECS else DEFAULT_CODEC_FALLBACK
 
     defaults = {
@@ -184,22 +176,17 @@ def init_db():
     for k, v in defaults.items():
         c.execute("INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)", (k, v))
 
-    # Migration 1: Force update preset to p7 if it was the old default p6
     c.execute("UPDATE config SET value='p7' WHERE key='preset' AND value='p6'")
 
-    # Migration 2: Validate Stored Codec against Hardware
-    # If the DB says 'av1' but hardware says 'hevc', force update the DB
     c.execute("SELECT value FROM config WHERE key='codec'")
     row = c.fetchone()
     if row:
         stored_codec = row[0]
         valid_ids = [x['id'] for x in AVAILABLE_CODECS]
         if valid_ids and stored_codec not in valid_ids:
-            print(f"DEBUG: Stored codec '{stored_codec}' not supported by current hardware.", flush=True)
             print(f"DEBUG: Resetting codec to '{valid_ids[0]}'", flush=True)
             c.execute("UPDATE config SET value=? WHERE key='codec'", (valid_ids[0],))
 
-    # Reset unfinished jobs on startup
     c.execute("UPDATE queue SET status='PENDING', progress=0 WHERE status='ENCODING' OR status='MANUAL_PAUSE'")
     conn.commit()
     conn.close()
@@ -256,19 +243,16 @@ def worker():
         total_duration = get_video_duration(input_path)
         print(f"DEBUG: Duration found: {total_duration}s", flush=True)
 
-        # Settings
         cq = get_config_value("cq") or "24"
         preset = get_config_value("preset") or "p7"
         res = get_config_value("resolution") or "Original"
         
-        # Get stored codec but VALIDATE against hardware availability
         stored_codec = get_config_value("codec")
         valid_codec_ids = [c["id"] for c in AVAILABLE_CODECS]
         
         if stored_codec and stored_codec in valid_codec_ids:
             codec = stored_codec
         elif valid_codec_ids:
-             # If DB has garbage or unsupported codec, fallback safely
             codec = valid_codec_ids[0]
         else:
             codec = DEFAULT_CODEC_FALLBACK
@@ -283,13 +267,9 @@ def worker():
             "-preset", preset,
         ]
 
-        # Apply correct quality flags based on codec type
         if "nvenc" in codec:
-            # NVENC uses -cq with -rc vbr for "Constant Quality" mode
-            # -b:v 0 uncaps the bitrate to allow quality to dictate it
             cmd.extend(["-rc", "vbr", "-cq", cq, "-b:v", "0"])
         else:
-            # CPU (libx265/x264) uses -crf for Constant Rate Factor
             cmd.extend(["-crf", cq])
 
         if res == "1080p": cmd.extend(["-vf", "scale=-1:1080"])
@@ -308,15 +288,12 @@ def worker():
                 universal_newlines=True, startupinfo=startupinfo
             )
             
-            # REGISTER PROCESS GLOBALLY
             ACTIVE_JOBS[job_id] = proc
             proc_obj = psutil.Process(proc.pid)
             
-            # Init tracker
             current_status_row = None 
             
             while proc.poll() is None:
-                # 1. Check DB for Manual Signals
                 db = get_db()
                 current_status_row = db.execute("SELECT status FROM queue WHERE id=?", (job_id,)).fetchone()
                 db.close()
@@ -361,10 +338,8 @@ def worker():
                 else:
                     time.sleep(1)
 
-            # FIX: Force wait for the return code to populate to prevent false "Failed" errors
             proc.wait()
 
-            # UNREGISTER
             if job_id in ACTIVE_JOBS:
                 del ACTIVE_JOBS[job_id]
 
@@ -381,7 +356,6 @@ def worker():
             if job_id in ACTIVE_JOBS:
                 del ACTIVE_JOBS[job_id]
 
-# Start Worker
 t = threading.Thread(target=worker, daemon=True)
 t.start()
 
@@ -420,9 +394,10 @@ async def home(request: Request):
         "codecs": AVAILABLE_CODECS
     })
 
+# THE FIX: Return the partial template instead of raw HTML string
 @app.get("/files_list", response_class=HTMLResponse)
 async def files_list(request: Request):
-    """Returns just the HTML list of files for the refresh button"""
+    """Returns the file list partial for the refresh button"""
     watch_dir = get_config_value("watch_dir")
     files = []
     
@@ -432,19 +407,8 @@ async def files_list(request: Request):
                            if f.lower().endswith(('.mkv', '.mp4', '.avi', '.mov', '.webm'))])
         except: pass
     
-    if not files:
-        return '<div class="text-gray-500 text-center mt-10">No files found.</div>'
-
-    html = ""
-    for file in files:
-        html += f"""
-        <form hx-post="/add" class="flex justify-between items-center bg-gray-700 p-2 mb-2 rounded hover:bg-gray-600 transition">
-            <span class="truncate w-2/3 text-sm" title="{file}">{file}</span>
-            <input type="hidden" name="filename" value="{file}">
-            <button type="submit" class="bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded text-xs font-bold">Queue</button>
-        </form>
-        """
-    return html
+    # Render the partial template located in templates/partials/file_list.html
+    return templates.TemplateResponse("partials/file_list.html", {"request": request, "files": files})
 
 @app.post("/set_path")
 async def set_path(path: str = Form(...)):
@@ -476,7 +440,7 @@ async def add_job(filename: str = Form(...)):
         db.execute("INSERT INTO queue (filename, status, progress) VALUES (?, 'PENDING', 0)", (filename,))
         db.commit()
     db.close()
-    return HTMLResponse(content="", headers={"HX-Refresh": "true"})
+    return HTMLResponse(content="")
 
 @app.post("/control/{job_id}/{action}")
 async def job_control(job_id: int, action: str):
@@ -501,7 +465,7 @@ async def job_control(job_id: int, action: str):
         
     db.commit()
     db.close()
-    return HTMLResponse(content="", headers={"HX-Refresh": "true"})
+    return HTMLResponse(content="")
 
 @app.get("/status_bar")
 async def status_bar():
