@@ -21,7 +21,6 @@ OUTPUT_SUFFIX = "_compressed"
 OUTPUT_EXT = ".mp4" 
 
 app = FastAPI()
-# Update directory to include root so we can access partials easily
 templates = Jinja2Templates(directory="templates")
 watchdog = GPUWatchdog()
 
@@ -269,6 +268,15 @@ def worker():
 
         if "nvenc" in codec:
             cmd.extend(["-rc", "vbr", "-cq", cq, "-b:v", "0"])
+            
+            # --- HIGH QUALITY MODE (RTX 50/40 Series Optimized) ---
+            if preset == "p7":
+                cmd.extend([
+                    "-multipass", "2", 
+                    "-rc-lookahead", "32",
+                    "-spatial-aq", "1",
+                    "-temporal-aq", "1"
+                ])
         else:
             cmd.extend(["-crf", cq])
 
@@ -394,21 +402,23 @@ async def home(request: Request):
         "codecs": AVAILABLE_CODECS
     })
 
-# THE FIX: Return the partial template instead of raw HTML string
+# THE FIX: Added No-Cache headers to prevent browser from showing stale file list
 @app.get("/files_list", response_class=HTMLResponse)
 async def files_list(request: Request):
-    """Returns the file list partial for the refresh button"""
     watch_dir = get_config_value("watch_dir")
+    print(f"DEBUG: Refreshing file list from: {watch_dir}", flush=True)
     files = []
     
     if watch_dir and os.path.exists(watch_dir):
         try:
             files = sorted([f for f in os.listdir(watch_dir) 
                            if f.lower().endswith(('.mkv', '.mp4', '.avi', '.mov', '.webm'))])
-        except: pass
+        except Exception as e:
+            print(f"Error reading dir: {e}", flush=True)
     
-    # Render the partial template located in templates/partials/file_list.html
-    return templates.TemplateResponse("partials/file_list.html", {"request": request, "files": files})
+    response = templates.TemplateResponse("partials/file_list.html", {"request": request, "files": files})
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return response
 
 @app.post("/set_path")
 async def set_path(path: str = Form(...)):
@@ -440,7 +450,9 @@ async def add_job(filename: str = Form(...)):
         db.execute("INSERT INTO queue (filename, status, progress) VALUES (?, 'PENDING', 0)", (filename,))
         db.commit()
     db.close()
-    return HTMLResponse(content="")
+    # FIX: Remove HX-Refresh to prevent full page reload
+    # Added HX-Trigger to force queue table update immediately
+    return HTMLResponse(content="", headers={"HX-Trigger": "update-queue"})
 
 @app.post("/control/{job_id}/{action}")
 async def job_control(job_id: int, action: str):
@@ -448,13 +460,11 @@ async def job_control(job_id: int, action: str):
     db = get_db()
     
     if action == "delete":
-        # IMMEDIATE KILL if active
         if job_id in ACTIVE_JOBS:
             print(f"DEBUG: Immediate Kill requested for Job #{job_id}", flush=True)
             try:
                 ACTIVE_JOBS[job_id].kill()
             except: pass
-        
         db.execute("DELETE FROM queue WHERE id=?", (job_id,))
 
     elif action == "pause":
@@ -465,7 +475,8 @@ async def job_control(job_id: int, action: str):
         
     db.commit()
     db.close()
-    return HTMLResponse(content="")
+    # FIX: Trigger queue update instead of refreshing
+    return HTMLResponse(content="", headers={"HX-Trigger": "update-queue"})
 
 @app.get("/status_bar")
 async def status_bar():

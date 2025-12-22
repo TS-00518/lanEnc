@@ -33,8 +33,6 @@
             background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            
-            /* Combine Flow (movement) and Glow (pulsing light) */
             animation: energyFlow 3s linear infinite, energyGlow 3s ease-in-out infinite;
         }
 
@@ -56,34 +54,28 @@
         /* --- Intense Button/Element Afterglow --- */
         button, .afterglow-target {
             position: relative;
-            /* overflow: hidden; Removed to allow shadow bloom */
         }
 
-        /* The Glow Overlay */
         button::after, .afterglow-target::after {
             content: '';
             position: absolute;
             top: 0; left: 0; right: 0; bottom: 0;
             border-radius: inherit;
-            
-            /* Intense White Energy Glow */
             box-shadow: 
                 0 0 20px rgba(255, 255, 255, 0.8),
                 0 0 50px rgba(255, 255, 255, 0.5),
                 inset 0 0 20px rgba(255, 255, 255, 0.3);
             background-color: rgba(255, 255, 255, 0.2);
             border: 1px solid rgba(255, 255, 255, 0.9);
-            
             opacity: 0;
             transition: opacity 1.5s cubic-bezier(0.19, 1, 0.22, 1);
             pointer-events: none;
             z-index: 10; 
         }
 
-        /* Trigger glow on active state */
         button:active::after, 
         .group:active .afterglow-target::after,
-        select:active ~ .afterglow-target::after { /* For select if wrapped */
+        select:active ~ .afterglow-target::after { 
             opacity: 1;
             transition: opacity 0.05s ease-out;
         }
@@ -93,10 +85,9 @@
         }
 
         /* --- Dropdown Glow --- */
-        /* Custom wrapper to apply afterglow to selects */
         .select-wrapper {
             position: relative;
-            border-radius: 0.75rem; /* rounded-xl */
+            border-radius: 0.75rem; 
         }
         .select-wrapper::after {
             content: '';
@@ -114,27 +105,69 @@
             transition: opacity 0.05s ease-out;
         }
 
-        /* --- Quality Slider Glow --- */
+        /* --- Quality Slider Styles --- */
         input[type=range] {
-            filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.5));
+            -webkit-appearance: none; 
+            width: 100%; 
+            background: transparent; 
+            height: 24px; 
+            cursor: pointer;
+        }
+        input[type=range]:focus { outline: none; }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px; 
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 999px;
+            border: 0;
         }
         input[type=range]::-webkit-slider-thumb {
-            box-shadow: 0 0 10px rgba(255, 255, 255, 0.8);
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #ffffff;
+            cursor: pointer;
+            -webkit-appearance: none;
+            margin-top: -6px; 
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.9), 0 0 5px rgba(255, 255, 255, 1); 
+            transition: transform 0.1s;
+        }
+        input[type=range]:active::-webkit-slider-thumb {
+            transform: scale(1.2);
+            box-shadow: 0 0 20px rgba(255, 255, 255, 1), 0 0 10px rgba(255, 255, 255, 1);
         }
         
-        /* Input Autofill Fix */
-        input:-webkit-autofill,
-        input:-webkit-autofill:hover, 
-        input:-webkit-autofill:focus, 
-        input:-webkit-autofill:active{
-            -webkit-box-shadow: 0 0 0 30px #0a0a0a inset !important;
-            -webkit-text-fill-color: white !important;
+        /* --- New Animations for Transfer/Glow --- */
+        .flash-white {
+            animation: flash 0.5s ease-out forwards;
+        }
+        @keyframes flash {
+            0% { background-color: rgba(255, 255, 255, 0.8); box-shadow: 0 0 30px white; }
+            100% { background-color: rgba(255, 255, 255, 0.05); box-shadow: none; }
+        }
+
+        /* Entry Glow for new Queue Items */
+        @keyframes slideInGlow {
+            0% {
+                background-color: rgba(255, 255, 255, 0.6);
+                box-shadow: 0 0 30px rgba(255,255,255,0.7);
+                transform: scale(1.02);
+            }
+            100% {
+                background-color: rgba(255, 255, 255, 0.05);
+                box-shadow: none;
+                transform: scale(1);
+            }
+        }
+        
+        /* Apply this to ALL rows, but idiomorph ensures existing rows don't re-run it */
+        .queue-item-entry {
+            animation: slideInGlow 1.5s ease-out forwards;
         }
     </style>
 </head>
 <body class="bg-black text-slate-200 font-light min-h-screen overflow-hidden relative selection:bg-white/20 selection:text-white">
-
-    <!-- Background Ambience REMOVED as requested -->
 
     <!-- Main Content Container -->
     <div class="relative z-10 container mx-auto p-10 h-screen flex flex-col">
@@ -213,7 +246,6 @@
                             <output class="text-base font-mono text-white font-bold px-3 py-1 rounded">{{ settings.cq }}</output>
                         </div>
                         <input type="range" name="cq" min="18" max="35" value="{{ settings.cq }}" 
-                               class="w-full h-1 bg-white/10 rounded-lg appearance-none cursor-pointer accent-white hover:accent-gray-300 transition-all"
                                oninput="this.previousElementSibling.querySelector('output').value = this.value">
                         <div class="flex justify-between text-[10px] uppercase text-slate-600 font-bold px-1 tracking-wider">
                             <span>High Quality</span>
@@ -277,9 +309,9 @@
                         <i class="fas fa-film text-white/40 text-sm"></i> LIBRARY
                     </h2>
                     <button hx-get="/files_list" hx-target="#file-list" 
-                            onclick="this.style.transform = 'rotate(' + (this.dataset.rot = (parseInt(this.dataset.rot)||0)+180) + 'deg')'"
-                            class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-transform duration-500" title="Refresh">
-                        <i class="fas fa-sync-alt text-sm"></i>
+                            onclick="var icon = this.querySelector('i'); icon.style.transform = 'rotate(' + (icon.dataset.rot = (parseInt(icon.dataset.rot)||0)+180) + 'deg)'"
+                            class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 flex items-center justify-center text-slate-400 hover:text-white" title="Refresh">
+                        <i class="fas fa-sync-alt text-sm transition-transform duration-500 ease-out"></i>
                     </button>
                 </div>
                 
@@ -295,28 +327,26 @@
                 </h2>
                 
                 <div class="flex-1 overflow-y-auto pr-2">
-                    <table class="w-full text-left border-separate border-spacing-y-3">
-                        <!-- BG-Transparent to remove black box -->
+                    <table class="w-full text-left border-separate border-spacing-y-3 table-fixed">
                         <thead class="sticky top-0 bg-transparent backdrop-blur-md z-10 text-xs font-bold uppercase tracking-widest text-slate-500">
                             <tr>
-                                <th class="pb-2 pl-4">Filename</th>
-                                <th class="pb-2">Status</th>
-                                <th class="pb-2 text-right pr-4">Controls</th>
+                                <th class="pb-2 pl-4 w-5/12">Filename</th>
+                                <th class="pb-2 w-5/12">Status</th>
+                                <th class="pb-2 text-right pr-4 w-2/12">Controls</th>
                             </tr>
                         </thead>
-                        <!-- IDIOMORPH INTEGRATION: hx-ext="morph" and hx-swap="morph:outerHTML" preserves focus and hover states -->
-                        <tbody hx-get="/" hx-select="tbody" hx-trigger="every 1s" hx-ext="morph" hx-swap="morph:outerHTML" class="text-base font-light">
+                        <!-- IDIOMORPH INTEGRATION + TRIGGER UPDATE-QUEUE -->
+                        <tbody hx-get="/" hx-select="tbody" hx-trigger="every 1s, update-queue from:body" hx-ext="morph" hx-swap="morph:outerHTML" class="text-base font-light">
                             {% for job in queue %}
-                            <tr id="job-{{ job[0] }}" class="group transition-all duration-300">
-                                <!-- First Cell: Rounded Left + Left Border -->
+                            <!-- Added queue-item-entry class for animation -->
+                            <tr id="job-{{ job[0] }}" class="group transition-all duration-300 queue-item-entry">
                                 <td class="py-4 pl-4 rounded-l-2xl bg-white/5 border-l border-y border-white/5 group-hover:bg-white/10 group-hover:border-white/20 transition-all align-middle backdrop-blur-sm">
                                     <div class="truncate max-w-[160px] text-slate-300 group-hover:text-white transition-colors font-normal tracking-wide" title="{{ job[1] }}">
                                         {{ job[1] }}
                                     </div>
                                 </td>
                                 
-                                <!-- Middle Cell: Top/Bottom Border Only -->
-                                <td class="py-4 pr-6 bg-white/5 border-y border-white/5 group-hover:bg-white/10 group-hover:border-white/20 transition-all align-middle w-5/12 backdrop-blur-sm">
+                                <td class="py-4 pr-6 bg-white/5 border-y border-white/5 group-hover:bg-white/10 group-hover:border-white/20 transition-all align-middle backdrop-blur-sm">
                                     {% if job[2] == 'ENCODING' %}
                                         <div class="relative w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
                                             <div class="absolute top-0 left-0 h-full bg-white transition-all duration-500 shadow-[0_0_15px_rgba(255,255,255,0.8)]" style="width: {{ job[3] }}%"></div>
@@ -345,7 +375,6 @@
                                     {% endif %}
                                 </td>
 
-                                <!-- Last Cell: Rounded Right + Right Border -->
                                 <td class="py-4 pr-4 rounded-r-2xl bg-white/5 border-r border-y border-white/5 group-hover:bg-white/10 group-hover:border-white/20 transition-all text-right align-middle backdrop-blur-sm">
                                     <div class="flex justify-end gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
                                         {% if job[2] == 'ENCODING' %}

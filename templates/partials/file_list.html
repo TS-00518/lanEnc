@@ -9,7 +9,8 @@
                 <span class="truncate text-base text-slate-300 font-light group-hover:text-white transition-colors tracking-wide" title="{{ file }}">{{ file }}</span>
             </div>
         </div>
-        <form hx-post="/add" class="flex-shrink-0">
+        <form hx-post="/add" hx-swap="none" class="flex-shrink-0" 
+              onclick="this.closest('.group').classList.add('flash-white'); setTimeout(() => this.closest('.group').classList.remove('flash-white'), 500)">
             <input type="hidden" name="filename" value="{{ file }}">
             <button type="submit" class="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/20 text-slate-400 hover:text-white flex items-center justify-center transition-all duration-300 group-hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] border border-white/5">
                 <i class="fas fa-plus text-xs"></i>
