@@ -414,16 +414,28 @@ async def home(request: Request):
 
 @app.post("/upload")
 async def upload_files(files: List[UploadFile] = File(...)):
+    # Standard upload endpoint now, but we expect calls with 1 file usually 
+    # to allow tracking progress per file on frontend
     if not os.path.exists(UPLOAD_DIR):
         os.makedirs(UPLOAD_DIR)
         
     for file in files:
         if not file.filename: continue
         file_location = os.path.join(UPLOAD_DIR, file.filename)
-        with open(file_location, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        
+        # Use try/finally to ensure partial files are cleaned up if upload is cancelled/broken
+        try:
+            with open(file_location, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+        except Exception as e:
+            print(f"Upload interrupted/failed for {file.filename}: {e}")
+            if os.path.exists(file_location):
+                try: os.remove(file_location)
+                except: pass
+            continue # Try next file if any
             
-    return RedirectResponse(url="/", status_code=303)
+    # Trigger refresh
+    return HTMLResponse(content="", headers={"HX-Trigger": "update-files"})
 
 @app.post("/delete_upload")
 async def delete_upload(request: Request, filename: str = Form(...)):

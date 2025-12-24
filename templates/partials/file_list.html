@@ -1,7 +1,8 @@
 {% if files %}
     {% for file in files %}
-    <div class="group flex items-center justify-between p-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/20 transition-all duration-300 backdrop-blur-sm">
-        <div class="flex items-center gap-4 overflow-hidden">
+    <!-- UPDATED: Uses unified .item-card class for consistent look -->
+    <div class="item-card flex items-center justify-between p-4 group">
+        <div class="flex items-center gap-4 overflow-hidden relative z-10">
             <div class="w-10 h-10 rounded-xl bg-black/40 flex items-center justify-center text-slate-500 group-hover:text-indigo-400 transition-colors border border-white/5">
                 <i class="fas fa-video text-sm"></i>
             </div>
@@ -10,17 +11,17 @@
             </div>
         </div>
         
-        <div class="flex items-center gap-2 flex-shrink-0">
+        <div class="flex items-center gap-2 flex-shrink-0 relative z-10">
             <!-- Add to Queue -->
             <form hx-post="/add" hx-swap="none"
-                  onclick="this.closest('.group').classList.add('flash-white'); setTimeout(() => this.closest('.group').classList.remove('flash-white'), 500)">
+                  onclick="this.closest('.item-card').classList.add('flash-white'); setTimeout(() => this.closest('.item-card').classList.remove('flash-white'), 500)">
                 <input type="hidden" name="filename" value="{{ file }}">
                 <button type="submit" class="w-10 h-10 rounded-xl bg-white/5 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-200 flex items-center justify-center transition-all duration-300 border border-white/5 hover:border-emerald-500/30" title="Add to Queue">
                     <i class="fas fa-plus text-xs"></i>
                 </button>
             </form>
 
-            <!-- Delete File (Instant Delete) -->
+            <!-- Delete File -->
             <form hx-post="/delete_upload" hx-target="#file-list" hx-swap="innerHTML">
                 <input type="hidden" name="filename" value="{{ file }}">
                 <button type="submit" class="w-10 h-10 rounded-xl bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-300 flex items-center justify-center transition-all duration-300 border border-white/5 hover:border-red-500/30" title="Delete File">
