@@ -3,37 +3,49 @@
 <head>
     <meta charset="UTF-8">
     <title>LanEnc - Premium Transcoder</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Local LAN Video Transcoding Server">
+    
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://unpkg.com/idiomorph/dist/idiomorph-ext.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
     <style>
-        /* --- Energy Flow & Glow Animation (Logo Active State) --- */
+        /* --- CSS Variables for Maintainability --- */
+        :root {
+            --glow-primary: 168, 85, 247; /* Purple-500 */
+            --glow-white: 255, 255, 255;
+            --glass-border: rgba(255, 255, 255, 0.08);
+            --glass-bg: rgba(5, 5, 10, 0.4);
+        }
+
+        /* --- Energy Flow & Glow Animation --- */
         @keyframes energyFlow {
             0% { background-position: 200% center; }
             100% { background-position: -200% center; }
         }
 
         @keyframes energyGlow {
-            0%, 100% { filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3)) drop-shadow(0 0 20px rgba(168, 85, 247, 0.2)); }
-            50% { filter: drop-shadow(0 0 25px rgba(255, 255, 255, 0.9)) drop-shadow(0 0 50px rgba(168, 85, 247, 0.6)); }
+            0%, 100% { filter: drop-shadow(0 0 10px rgba(var(--glow-white), 0.3)) drop-shadow(0 0 20px rgba(var(--glow-primary), 0.2)); }
+            50% { filter: drop-shadow(0 0 25px rgba(var(--glow-white), 0.9)) drop-shadow(0 0 50px rgba(var(--glow-primary), 0.6)); }
         }
         
         .logo-energy-active {
-            background: linear-gradient(
-                90deg, 
-                #ffffff 0%, 
-                #a855f7 25%, 
-                #ffffff 50%, 
-                #a855f7 75%, 
-                #ffffff 100%
-            );
+            background: linear-gradient(90deg, #ffffff 0%, #a855f7 25%, #ffffff 50%, #a855f7 75%, #ffffff 100%);
             background-size: 200% auto;
             color: #fff;
             background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             animation: energyFlow 3s linear infinite, energyGlow 3s ease-in-out infinite;
+        }
+
+        /* --- Global Styles --- */
+        body {
+            background-color: #000;
+            color: #e2e8f0; /* slate-200 */
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
         }
 
         /* --- Scrollbar --- */
@@ -44,31 +56,64 @@
 
         /* --- Glass Panel --- */
         .glass-panel {
-            background: rgba(5, 5, 10, 0.4);
+            background: var(--glass-bg);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid var(--glass-border);
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8);
         }
         
-        /* --- Unified Item Card Styling --- */
-        .item-card {
+        /* --- Intense Button/Element Afterglow --- */
+        button, .afterglow-target, .upload-zone { position: relative; }
+
+        button::after, .afterglow-target::after, .upload-zone::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            box-shadow: 
+                0 0 20px rgba(var(--glow-white), 0.8),
+                0 0 50px rgba(var(--glow-white), 0.5),
+                inset 0 0 20px rgba(var(--glow-white), 0.3);
+            background-color: rgba(var(--glow-white), 0.2);
+            border: 1px solid rgba(var(--glow-white), 0.9);
+            opacity: 0;
+            transition: opacity 1.5s cubic-bezier(0.19, 1, 0.22, 1);
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        /* Active States */
+        button:active::after, 
+        .group:active .afterglow-target::after,
+        select:active ~ .afterglow-target::after { opacity: 1; transition: opacity 0.05s ease-out; }
+        
+        button:active { transform: scale(0.97); }
+        button:focus-visible { outline: 2px solid #a855f7; outline-offset: 2px; }
+
+        .file-input-wrapper:active .upload-zone { transform: scale(0.97); }
+        .file-input-wrapper:active .upload-zone::after { opacity: 1; transition: opacity 0.05s ease-out; }
+
+        /* --- Unified Item & Queue Card Styling --- */
+        .item-card, .queue-card {
             position: relative;
-            border-radius: 1rem;
             background-color: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.05);
             transition: all 0.3s ease-out;
             backdrop-filter: blur(4px);
             overflow: visible; 
         }
-        .item-card:hover {
+        .item-card { border-radius: 1rem; }
+
+        .item-card:hover, .queue-card:hover {
             background-color: rgba(255, 255, 255, 0.1);
             border-color: rgba(255, 255, 255, 0.2);
             transform: scale(1.02);
             z-index: 20;
             box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
         }
-        .item-card::after {
+        
+        .item-card::before, .queue-card::before { 
             content: '';
             position: absolute;
             inset: 0;
@@ -79,117 +124,34 @@
             pointer-events: none;
             z-index: -1;
         }
-        .item-card:hover::after {
-            opacity: 1;
-        }
+        .item-card:hover::before, .queue-card:hover::before { opacity: 1; }
 
-        /* --- Table Row Styling --- */
-        tr.queue-item-entry td {
-            background-color: rgba(255, 255, 255, 0.05);
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            transition: background-color 0.3s ease-out, border-color 0.3s ease-out;
-        }
-        tr.queue-item-entry td:first-child {
-            border-left: 1px solid rgba(255, 255, 255, 0.05);
-            border-top-left-radius: 1rem;
-            border-bottom-left-radius: 1rem;
-        }
-        tr.queue-item-entry td:last-child {
-            border-right: 1px solid rgba(255, 255, 255, 0.05);
-            border-top-right-radius: 1rem;
-            border-bottom-right-radius: 1rem;
-        }
-        tr.queue-item-entry:hover td {
-            background-color: rgba(255, 255, 255, 0.1);
-            border-color: rgba(255, 255, 255, 0.2);
-        }
-        tr.queue-item-entry {
-            transition: transform 0.3s ease-out;
-            position: relative;
-            z-index: 10;
-        }
-        tr.queue-item-entry:hover {
-            transform: scale(1.02);
-            z-index: 30;
-        }
-        /* Row Glow */
-        tr.queue-item-entry::after {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: 1rem;
-            box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
-            opacity: 0;
-            transition: opacity 0.3s ease-out;
-            pointer-events: none;
-            z-index: -1;
-        }
-        tr.queue-item-entry:hover::after {
-            opacity: 1;
-        }
-
-        /* --- FIXED: Consistent Cell Height Wrapper --- */
-        .cell-content-fixed {
-            height: 3.5rem; /* Fixed height for consistency */
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-
-        /* --- FIXED: Delete Animation (Flash -> Fade) --- */
+        /* --- Animations --- */
         @keyframes flashFade {
-            0% {
-                background-color: rgba(255, 255, 255, 0.1);
-                opacity: 1;
-            }
-            20% {
-                background-color: rgba(255, 255, 255, 0.9); /* Bright flash */
-                box-shadow: 0 0 30px rgba(255, 255, 255, 0.8);
-                opacity: 1;
-            }
-            100% {
-                background-color: transparent;
-                opacity: 0;
-                transform: scale(0.9);
-            }
+            0% { background-color: rgba(255, 255, 255, 0.1); opacity: 1; }
+            20% { background-color: rgba(255, 255, 255, 0.9); box-shadow: 0 0 30px rgba(255, 255, 255, 0.8); opacity: 1; }
+            100% { background-color: transparent; opacity: 0; transform: scale(0.9); }
         }
-        /* Target TDs directly for the flash as TR background is often finicky */
-        .htmx-swapping td {
-            animation: flashFade 0.6s ease-out forwards !important;
-        }
-        .htmx-swapping {
-            pointer-events: none; /* Prevent interaction during deletion */
-            z-index: 50 !important;
-        }
+        .htmx-swapping .queue-card { animation: flashFade 0.6s ease-out forwards !important; pointer-events: none; z-index: 50 !important; }
 
-        /* --- Entry/Resume Animation --- */
         @keyframes slideInGlow {
-            0% { 
-                background-color: rgba(255, 255, 255, 0.4); 
-                transform: scale(1.05); 
-                box-shadow: 0 0 30px rgba(255, 255, 255, 0.3);
-            }
-            100% { 
-                background-color: rgba(255, 255, 255, 0.05); 
-                transform: scale(1); 
-                box-shadow: none;
-            }
+            0% { background-color: rgba(255, 255, 255, 0.4); transform: scale(1.05); box-shadow: 0 0 30px rgba(255, 255, 255, 0.3); }
+            100% { background-color: rgba(255, 255, 255, 0.05); transform: scale(1); box-shadow: none; }
         }
         .animate-entry { animation: slideInGlow 0.8s ease-out forwards; }
-        
-        /* Inputs */
-        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; height: 24px; cursor: pointer; }
-        input[type=range]:focus { outline: none; }
-        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: rgba(255, 255, 255, 0.1); border-radius: 999px; border: 0; }
-        input[type=range]::-webkit-slider-thumb { height: 16px; width: 16px; border-radius: 50%; background: #ffffff; cursor: pointer; -webkit-appearance: none; margin-top: -6px; box-shadow: 0 0 15px rgba(255, 255, 255, 0.9); transition: transform 0.1s; }
-        input[type=range]:active::-webkit-slider-thumb { transform: scale(1.2); box-shadow: 0 0 20px rgba(255, 255, 255, 1); }
         
         .flash-white { animation: flash 0.5s ease-out forwards; }
         @keyframes flash {
             0% { background-color: rgba(255, 255, 255, 0.8); box-shadow: 0 0 30px white; }
             100% { background-color: rgba(255, 255, 255, 0.05); box-shadow: none; }
         }
+
+        /* --- Form Elements --- */
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; height: 24px; cursor: pointer; }
+        input[type=range]:focus { outline: none; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: rgba(255, 255, 255, 0.1); border-radius: 999px; border: 0; }
+        input[type=range]::-webkit-slider-thumb { height: 16px; width: 16px; border-radius: 50%; background: #ffffff; cursor: pointer; -webkit-appearance: none; margin-top: -6px; box-shadow: 0 0 15px rgba(255, 255, 255, 0.9); transition: transform 0.1s; }
+        input[type=range]:active::-webkit-slider-thumb { transform: scale(1.2); box-shadow: 0 0 20px rgba(255, 255, 255, 1); }
 
         .file-input-wrapper { position: relative; overflow: hidden; display: inline-block; }
         .file-input-wrapper input[type=file] { font-size: 100px; position: absolute; left: 0; top: 0; opacity: 0; cursor: pointer; }
@@ -201,12 +163,33 @@
         .file-input-wrapper:hover i { transform: scale(1.2); color: #d8b4fe; filter: drop-shadow(0 0 5px #a855f7); }
     </style>
 </head>
-<body class="bg-black text-slate-200 font-light min-h-screen overflow-hidden relative selection:bg-white/20 selection:text-white">
+<body class="min-h-screen overflow-hidden relative selection:bg-white/20 selection:text-white">
 
-    <!-- Main Content Container -->
+    <template id="upload-card-template">
+        <div class="item-card flex items-center justify-between p-4 relative overflow-hidden" role="listitem">
+            <div class="flex items-center gap-4 overflow-hidden relative z-10 w-full pr-12">
+                <div class="w-10 h-10 rounded-xl bg-black/40 flex items-center justify-center text-indigo-400 border border-white/5 shrink-0">
+                    <i class="fas fa-cloud-upload-alt text-sm animate-pulse"></i>
+                </div>
+                <div class="flex flex-col overflow-hidden w-full">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="truncate text-base text-white font-light tracking-wide file-name-display">Filename</span>
+                        <span class="text-[10px] font-mono text-indigo-300 progress-text">0%</span>
+                    </div>
+                    <div class="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+                        <div class="progress-bar h-full bg-gradient-to-r from-indigo-500 to-purple-500 w-0 transition-all duration-100"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <button type="button" class="cancel-btn absolute top-1/2 -translate-y-1/2 right-4 w-8 h-8 rounded-lg bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-300 flex items-center justify-center transition-all border border-transparent hover:border-red-500/30 z-20" aria-label="Cancel Upload">
+                <i class="fas fa-times text-xs pointer-events-none"></i>
+            </button>
+        </div>
+    </template>
+
     <div class="relative z-10 container mx-auto p-10 h-screen flex flex-col">
         
-        <!-- Header Section -->
         <div class="flex justify-between items-end mb-10 pb-6 border-b border-white/10">
             <div>
                 <h1 class="text-7xl font-thin tracking-wider text-white mb-2 leading-none">
@@ -217,7 +200,6 @@
                 </div>
             </div>
 
-            <!-- Upload Controls -->
             <div class="flex flex-col items-end gap-4 w-1/2">
                 <div class="flex w-full gap-4 justify-end relative">
                     <div class="file-input-wrapper w-full relative">
@@ -233,10 +215,8 @@
             </div>
         </div>
 
-        <!-- Dashboard Grid -->
         <div class="grid grid-cols-12 gap-8 flex-1 min-h-0">
             
-            <!-- COLUMN 1: Settings Panel -->
             <div class="col-span-3 glass-panel rounded-3xl p-8 flex flex-col h-full overflow-hidden">
                 <h2 class="text-xl font-light text-white mb-8 flex items-center gap-3 tracking-widest border-b border-white/5 pb-4">
                     <i class="fas fa-sliders-h text-white/40 text-sm"></i> CONFIG
@@ -244,7 +224,6 @@
                 
                 <form hx-post="/save_settings" hx-target="#save-msg" hx-swap="innerHTML" class="space-y-8">
                     
-                    <!-- Codec -->
                     <div class="space-y-3">
                         <label class="text-xs uppercase tracking-widest text-slate-500 font-bold">Video Codec</label>
                         <div class="select-wrapper relative group">
@@ -261,21 +240,18 @@
                         </div>
                     </div>
 
-                    <!-- Quality -->
                     <div class="space-y-4">
                         <div class="flex justify-between items-center">
                             <label class="text-xs uppercase tracking-widest text-slate-500 font-bold">Quality (RF/CQ)</label>
                             <output class="text-base font-mono text-white font-bold px-3 py-1 rounded">{{ settings.cq }}</output>
                         </div>
-                        <input type="range" name="cq" min="18" max="35" value="{{ settings.cq }}" 
-                               oninput="this.previousElementSibling.querySelector('output').value = this.value">
+                        <input type="range" name="cq" min="18" max="35" value="{{ settings.cq }}" class="range-sync">
                         <div class="flex justify-between text-[10px] uppercase text-slate-600 font-bold px-1 tracking-wider">
                             <span>High Quality</span>
                             <span>Low Size</span>
                         </div>
                     </div>
 
-                    <!-- Preset -->
                     <div class="space-y-3">
                         <label class="text-xs uppercase tracking-widest text-slate-500 font-bold">Speed Preset</label>
                         <div class="grid grid-cols-1 gap-3">
@@ -300,7 +276,6 @@
                         </div>
                     </div>
 
-                    <!-- Resolution -->
                     <div class="space-y-3">
                         <label class="text-xs uppercase tracking-widest text-slate-500 font-bold">Resolution</label>
                         <div class="select-wrapper relative group">
@@ -324,15 +299,14 @@
                 </form>
             </div>
 
-            <!-- COLUMN 2: File Browser -->
             <div class="col-span-4 glass-panel rounded-3xl p-8 flex flex-col h-full">
                 <div class="flex justify-between items-center mb-8 pb-4 border-b border-white/10">
                     <h2 class="text-xl font-light text-white flex items-center gap-3 tracking-widest">
                         <i class="fas fa-film text-white/40 text-sm"></i> UPLOADS
                     </h2>
-                    <button hx-get="/files_list" hx-target="#file-list" 
-                            onclick="var icon = this.querySelector('i'); icon.style.transform = 'rotate(' + (icon.dataset.rot = (parseInt(icon.dataset.rot)||0)+180) + 'deg)'"
-                            class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 flex items-center justify-center text-slate-400 hover:text-white" title="Refresh">
+                    <button id="refresh-btn" hx-get="/files_list" hx-target="#file-list" 
+                            class="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 border border-transparent hover:border-white/10 flex items-center justify-center text-slate-400 hover:text-white focus:outline-none focus:ring-2 focus:ring-purple-500" 
+                            aria-label="Refresh Files" title="Refresh">
                         <i class="fas fa-sync-alt text-sm transition-transform duration-500 ease-out"></i>
                     </button>
                 </div>
@@ -345,222 +319,286 @@
                 </div>
             </div>
 
-            <!-- COLUMN 3: Queue -->
             <div class="col-span-5 glass-panel rounded-3xl p-8 flex flex-col h-full">
                 <h2 class="text-xl font-light text-white mb-8 pb-4 border-b border-white/10 flex items-center gap-3 tracking-widest">
                     <i class="fas fa-layer-group text-white/40 text-sm"></i> ACTIVE QUEUE
                 </h2>
                 
                 <div class="flex-1 overflow-y-auto p-3 -mx-3">
-                    <table class="w-full text-left border-separate border-spacing-y-3 table-fixed">
-                        <thead class="sticky top-0 bg-transparent backdrop-blur-md z-10 text-xs font-bold uppercase tracking-widest text-slate-500">
-                            <tr>
-                                <th class="pb-2 pl-4 w-5/12">Filename</th>
-                                <th class="pb-2 w-5/12">Status</th>
-                                <th class="pb-2 text-right pr-4 w-2/12">Controls</th>
-                            </tr>
-                        </thead>
-                        <tbody hx-get="/" hx-select="tbody" hx-trigger="every 1s, update-queue from:body" hx-ext="morph" hx-swap="morph:outerHTML" class="text-base font-light">
-                            {% for job in queue %}
-                            <!-- Applied animate-entry class if pending to flash on add/resume -->
-                            <tr id="job-{{ job.id }}" class="group queue-item-entry animate-entry {% if job.status == 'PENDING' %}animate-entry{% endif %}">
-                                <td class="py-4 pl-4 align-middle backdrop-blur-sm">
-                                    <div class="cell-content-fixed justify-center">
-                                        <div class="truncate max-w-[160px] text-slate-300 group-hover:text-white transition-colors font-normal tracking-wide" title="{{ job.filename }}">
-                                            {{ job.filename }}
+                    <div class="flex px-4 pb-2 text-xs font-bold uppercase tracking-widest text-slate-500 sticky top-0 bg-transparent backdrop-blur-md z-10">
+                        <div class="w-5/12">Filename</div>
+                        <div class="w-5/12">Status</div>
+                        <div class="w-2/12 text-right">Controls</div>
+                    </div>
+
+                    <div id="queue-list" class="flex flex-col gap-3" hx-get="/" hx-select="#queue-list" hx-trigger="every 1s, update-queue from:body" hx-ext="morph" hx-swap="morph:outerHTML">
+                        {% for job in queue %}
+                        <div id="job-{{ job.id }}" class="group queue-card relative flex items-center p-4 rounded-2xl {% if job.status == 'PENDING' %}animate-entry{% endif %}">
+                            
+                            <div class="w-5/12 pr-4 overflow-hidden">
+                                <div class="truncate text-slate-300 group-hover:text-white transition-colors font-normal tracking-wide" title="{{ job.filename }}">
+                                    {{ job.filename }}
+                                </div>
+                            </div>
+                            
+                            <div class="w-5/12 pr-4 flex flex-col justify-center min-h-[3rem]">
+                                {% if job.status == 'ENCODING' %}
+                                    <div class="relative w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-2">
+                                        <div class="absolute top-0 left-0 h-full bg-white transition-all duration-500 shadow-[0_0_15px_rgba(255,255,255,0.8)]" style="width: {{ job.progress }}%"></div>
+                                        <div class="absolute top-0 left-0 h-full w-full bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" style="animation-delay: 0.5s"></div>
+                                    </div>
+                                    <div class="flex justify-between items-center w-full">
+                                        <span class="text-[10px] font-bold text-white animate-pulse tracking-[0.15em] uppercase" data-status="processing">Processing</span>
+                                        <div class="text-right flex items-center gap-2">
+                                            <span class="text-xs font-mono text-emerald-400">{{ job.elapsed_time if job.elapsed_time else '0s' }}</span>
+                                            <span class="text-xs font-mono text-slate-300">{{ job.progress }}%</span>
                                         </div>
                                     </div>
-                                </td>
-                                
-                                <td class="py-4 pr-6 align-middle backdrop-blur-sm">
-                                    <!-- FIXED: Wrapped in .cell-content-fixed for consistent height -->
-                                    <div class="cell-content-fixed">
-                                        {% if job.status == 'ENCODING' %}
-                                            <div class="relative w-full h-1.5 bg-white/10 rounded-full overflow-hidden mb-2">
-                                                <div class="absolute top-0 left-0 h-full bg-white transition-all duration-500 shadow-[0_0_15px_rgba(255,255,255,0.8)]" style="width: {{ job.progress }}%"></div>
-                                                <div class="absolute top-0 left-0 h-full w-full bg-gradient-to-r from-transparent via-white/50 to-transparent -translate-x-full animate-[shimmer_2s_infinite]" style="animation-delay: 0.5s"></div>
-                                            </div>
-                                            <div class="flex justify-between items-center w-full">
-                                                <span class="text-[10px] font-bold text-white animate-pulse tracking-[0.15em] uppercase">Processing</span>
-                                                <div class="text-right flex items-center gap-2">
-                                                    <span class="text-xs font-mono text-emerald-400">{{ job.elapsed_time if job.elapsed_time else '0s' }}</span>
-                                                    <span class="text-xs font-mono text-slate-300">{{ job.progress }}%</span>
-                                                </div>
-                                            </div>
-                                        {% elif job.status == 'MANUAL_PAUSE' %}
-                                            <div class="inline-flex items-center px-3 py-1.5 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 text-[10px] font-bold tracking-widest uppercase self-start">
-                                                <i class="fas fa-pause mr-2 text-[8px]"></i> PAUSED
-                                            </div>
-                                        {% elif job.status == 'PENDING' %}
-                                            <div class="inline-flex items-center px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 text-slate-400 text-[10px] font-bold tracking-widest uppercase self-start">
-                                                <i class="fas fa-clock mr-2 text-[8px]"></i> QUEUED
-                                            </div>
-                                        {% elif job.status == 'COMPLETED' %}
-                                            <div class="flex flex-col gap-1 w-full justify-center">
-                                                <a href="/download/{{ job.filename }}" class="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-300 text-[10px] font-bold tracking-widest uppercase transition-all duration-300 hover:shadow-[0_0_15px_rgba(16,185,129,0.3)] w-full">
-                                                    <i class="fas fa-download mr-2 text-[8px]"></i> Download
-                                                </a>
-                                                {% if job.elapsed_time %}
-                                                <div class="text-[9px] text-slate-500 text-center font-mono w-full">
-                                                    <i class="fas fa-stopwatch mr-1"></i>{{ job.elapsed_time }}
-                                                </div>
-                                                {% endif %}
-                                            </div>
-                                        {% elif job.status == 'FAILED' %}
-                                            <div class="inline-flex items-center px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-[10px] font-bold tracking-widest uppercase self-start">
-                                                <i class="fas fa-times mr-2 text-[8px]"></i> ERROR
-                                            </div>
+                                {% elif job.status == 'MANUAL_PAUSE' %}
+                                    <div class="flex items-center justify-center w-full px-3 py-1.5 rounded-lg bg-yellow-500/10 border border-yellow-500/20 text-yellow-200 text-[10px] font-bold tracking-widest uppercase">
+                                        <i class="fas fa-pause mr-2 text-[8px]"></i> PAUSED
+                                    </div>
+                                {% elif job.status == 'PENDING' %}
+                                    <div class="flex items-center justify-center w-full px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 text-slate-400 text-[10px] font-bold tracking-widest uppercase">
+                                        <i class="fas fa-clock mr-2 text-[8px]"></i> QUEUED
+                                    </div>
+                                {% elif job.status == 'COMPLETED' %}
+                                    <div class="flex flex-col gap-1 w-full justify-center">
+                                        <a href="/download/{{ job.filename }}" class="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-300 text-[10px] font-bold tracking-widest uppercase transition-all duration-300 hover:shadow-[0_0_15px_rgba(16,185,129,0.3)] w-full">
+                                            <i class="fas fa-download mr-2 text-[8px]"></i> Download
+                                        </a>
+                                        {% if job.elapsed_time %}
+                                        <div class="text-[9px] text-slate-500 text-center font-mono w-full">
+                                            <i class="fas fa-stopwatch mr-1"></i>{{ job.elapsed_time }}
+                                        </div>
                                         {% endif %}
                                     </div>
-                                </td>
-
-                                <td class="py-4 pr-4 align-middle backdrop-blur-sm">
-                                    <div class="cell-content-fixed justify-center">
-                                        <div class="flex justify-end gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
-                                            {% if job.status == 'ENCODING' %}
-                                                <button hx-post="/control/{{ job.id }}/pause" class="w-9 h-9 rounded-lg bg-white/5 hover:bg-yellow-500/20 text-slate-400 hover:text-yellow-200 flex items-center justify-center transition-all border border-transparent hover:border-yellow-500/30" title="Pause">
-                                                    <i class="fas fa-pause text-[10px]"></i>
-                                                </button>
-                                            {% elif job.status == 'MANUAL_PAUSE' %}
-                                                <!-- FIXED: Resume Logic to force reflow and restart animation -->
-                                                <button hx-post="/control/{{ job.id }}/resume" 
-                                                        class="w-9 h-9 rounded-lg bg-white/5 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-200 flex items-center justify-center transition-all border border-transparent hover:border-emerald-500/30" 
-                                                        title="Resume"
-                                                        onclick="const row = this.closest('tr'); row.classList.remove('animate-entry'); void row.offsetWidth; row.classList.add('animate-entry');">
-                                                    <i class="fas fa-play text-[10px] pl-0.5"></i>
-                                                </button>
-                                            {% endif %}
-                                            
-                                            <!-- hx-swap outerHTML ensures the TR is removed, triggering .htmx-swapping CSS -->
-                                            <button hx-post="/control/{{ job.id }}/delete" class="w-9 h-9 rounded-lg bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-300 flex items-center justify-center transition-all border border-transparent hover:border-red-500/30" title="Remove" hx-swap="outerHTML swap:0.6s">
-                                                <i class="fas fa-trash text-[10px]"></i>
-                                            </button>
-                                        </div>
+                                {% elif job.status == 'FAILED' %}
+                                    <div class="flex items-center justify-center w-full px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-300 text-[10px] font-bold tracking-widest uppercase">
+                                        <i class="fas fa-times mr-2 text-[8px]"></i> ERROR
                                     </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                            
-                            {% if not queue %}
-                            <tr>
-                                <td colspan="3" class="py-24 text-center text-slate-600 text-lg font-light tracking-wide opacity-50">
-                                    Queue is empty
-                                </td>
-                            </tr>
-                            {% endif %}
-                        </tbody>
-                    </table>
+                                {% endif %}
+                            </div>
+
+                            <div class="w-2/12 flex justify-end gap-3 opacity-60 group-hover:opacity-100 transition-opacity">
+                                {% if job.status == 'ENCODING' %}
+                                    <button hx-post="/control/{{ job.id }}/pause" class="w-9 h-9 rounded-lg bg-white/5 hover:bg-yellow-500/20 text-slate-400 hover:text-yellow-200 flex items-center justify-center transition-all border border-transparent hover:border-yellow-500/30" aria-label="Pause" title="Pause">
+                                        <i class="fas fa-pause text-[10px] pointer-events-none"></i>
+                                    </button>
+                                {% elif job.status == 'MANUAL_PAUSE' %}
+                                    <button hx-post="/control/{{ job.id }}/resume" 
+                                            class="w-9 h-9 rounded-lg bg-white/5 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-200 flex items-center justify-center transition-all border border-transparent hover:border-emerald-500/30" 
+                                            title="Resume" aria-label="Resume"
+                                            data-action="restart-anim">
+                                        <i class="fas fa-play text-[10px] pl-0.5 pointer-events-none"></i>
+                                    </button>
+                                {% endif %}
+                                
+                                <button hx-post="/control/{{ job.id }}/delete" class="w-9 h-9 rounded-lg bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-300 flex items-center justify-center transition-all border border-transparent hover:border-red-500/30" aria-label="Delete" title="Remove" hx-swap="outerHTML swap:0.6s">
+                                    <i class="fas fa-trash text-[10px] pointer-events-none"></i>
+                                </button>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        
+                        {% if not queue %}
+                        <div class="py-24 text-center text-slate-600 text-lg font-light tracking-wide opacity-50 flex flex-col items-center">
+                            <i class="fas fa-inbox text-4xl mb-3 opacity-20"></i>
+                            <span>Queue is empty</span>
+                        </div>
+                        {% endif %}
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <script>
-        document.body.addEventListener('htmx:afterSwap', function(evt) {
-            const encodingBadge = document.querySelector('.animate-pulse');
-            const logo = document.getElementById("logo-enc");
-            
-            if (encodingBadge && encodingBadge.innerText.includes("PROCESSING")) {
-                logo.classList.remove("text-transparent", "bg-clip-text", "bg-gradient-to-r", "from-indigo-400", "to-purple-400");
-                logo.classList.add("logo-energy-active");
-            } else {
-                logo.classList.remove("logo-energy-active");
-                logo.classList.add("text-transparent", "bg-clip-text", "bg-gradient-to-r", "from-indigo-400", "to-purple-400");
-            }
-        });
-
-        const fileInput = document.getElementById('file-upload-input');
-        const activeUploadsContainer = document.getElementById('active-uploads');
-
-        fileInput.addEventListener('change', (e) => {
-            const files = e.target.files;
-            if (!files.length) return;
-
-            Array.from(files).forEach(file => {
-                uploadFile(file);
-            });
-            fileInput.value = ''; 
-        });
-
-        function uploadFile(file) {
-            const id = 'upload-' + Math.random().toString(36).substr(2, 9);
-            const el = document.createElement('div');
-            el.id = id;
-            el.className = "item-card flex items-center justify-between p-4 relative overflow-hidden";
-            el.innerHTML = `
-                <div class="flex items-center gap-4 overflow-hidden relative z-10 w-full pr-12">
-                    <div class="w-10 h-10 rounded-xl bg-black/40 flex items-center justify-center text-indigo-400 border border-white/5 shrink-0">
-                        <i class="fas fa-cloud-upload-alt text-sm animate-pulse"></i>
-                    </div>
-                    <div class="flex flex-col overflow-hidden w-full">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="truncate text-base text-white font-light tracking-wide" title="${file.name}">${file.name}</span>
-                            <span class="text-[10px] font-mono text-indigo-300 progress-text">0%</span>
-                        </div>
-                        <div class="w-full h-1 bg-white/10 rounded-full overflow-hidden">
-                            <div class="progress-bar h-full bg-gradient-to-r from-indigo-500 to-purple-500 w-0 transition-all duration-100"></div>
-                        </div>
-                    </div>
-                </div>
+        /**
+         * UploadManager Class
+         * Encapsulates all file upload logic including progress bars and cancellations.
+         */
+        class UploadManager {
+            constructor(fileInputId, containerId, templateId) {
+                this.fileInput = document.getElementById(fileInputId);
+                this.container = document.getElementById(containerId);
+                this.template = document.getElementById(templateId);
                 
-                <button class="cancel-btn absolute top-1/2 -translate-y-1/2 right-4 w-8 h-8 rounded-lg bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-300 flex items-center justify-center transition-all border border-transparent hover:border-red-500/30 z-20" title="Cancel Upload">
-                    <i class="fas fa-times text-xs"></i>
-                </button>
-            `;
-            activeUploadsContainer.appendChild(el);
-
-            const xhr = new XMLHttpRequest();
-            const formData = new FormData();
-            formData.append('files', file); 
-
-            xhr.upload.addEventListener('progress', (e) => {
-                if (e.lengthComputable) {
-                    const percent = (e.loaded / e.total) * 100;
-                    el.querySelector('.progress-bar').style.width = percent + '%';
-                    el.querySelector('.progress-text').innerText = Math.round(percent) + '%';
+                if (this.fileInput) {
+                    this.fileInput.addEventListener('change', (e) => this.handleFiles(e.target.files));
                 }
-            });
+            }
 
-            xhr.addEventListener('load', () => {
-                if (xhr.status >= 200 && xhr.status < 300) {
+            handleFiles(fileList) {
+                if (!fileList.length) return;
+                Array.from(fileList).forEach(file => this.uploadFile(file));
+                this.fileInput.value = ''; // Reset input
+            }
+
+            uploadFile(file) {
+                const clone = this.template.content.cloneNode(true);
+                const el = clone.querySelector('.item-card');
+                const id = 'upload-' + Math.random().toString(36).substr(2, 9);
+                el.id = id;
+
+                el.querySelector('.file-name-display').textContent = file.name;
+                el.querySelector('.file-name-display').title = file.name;
+
+                this.container.appendChild(el);
+                const domEl = document.getElementById(id);
+
+                const xhr = new XMLHttpRequest();
+                const formData = new FormData();
+                formData.append('files', file);
+
+                // Progress Listener
+                xhr.upload.addEventListener('progress', (e) => {
+                    if (e.lengthComputable) {
+                        const percent = (e.loaded / e.total) * 100;
+                        domEl.querySelector('.progress-bar').style.width = percent + '%';
+                        domEl.querySelector('.progress-text').textContent = Math.round(percent) + '%';
+                    }
+                });
+
+                // Load Listener
+                xhr.addEventListener('load', () => {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        this.animateRemoval(domEl, () => {
+                            htmx.trigger('body', 'update-files');
+                        });
+                    } else {
+                        this.setErrorState(domEl, "Failed");
+                    }
+                });
+
+                // Error Listener
+                xhr.addEventListener('error', () => this.setErrorState(domEl, "Error"));
+
+                // Cancel Listener
+                const cancelBtn = domEl.querySelector('.cancel-btn');
+                cancelBtn.onclick = () => {
+                    xhr.abort();
+                    this.animateRemoval(domEl, null, true);
+                };
+
+                xhr.open('POST', '/upload');
+                xhr.send(formData);
+            }
+
+            setErrorState(el, msg) {
+                const txt = el.querySelector('.progress-text');
+                txt.textContent = msg;
+                txt.classList.add('text-red-400');
+            }
+
+            animateRemoval(el, callback, isCancel = false) {
+                if (isCancel) {
+                    // Flash effect for manual cancel
+                    el.style.transition = 'all 0.5s ease';
+                    el.style.backgroundColor = 'rgba(255,255,255,0.9)';
+                    el.style.boxShadow = '0 0 30px white';
+                } else {
                     el.style.opacity = '0';
                     el.style.transform = 'translateY(-10px)';
-                    setTimeout(() => {
-                        if(el.parentNode) el.parentNode.removeChild(el);
-                        htmx.trigger('body', 'update-files'); 
-                    }, 300);
-                } else {
-                    el.querySelector('.progress-text').innerText = "Failed";
-                    el.querySelector('.progress-text').classList.add('text-red-400');
                 }
-            });
 
-            xhr.addEventListener('error', () => {
-                el.querySelector('.progress-text').innerText = "Error";
-                el.querySelector('.progress-text').classList.add('text-red-400');
-            });
-
-            const cancelBtn = el.querySelector('.cancel-btn');
-            cancelBtn.addEventListener('click', () => {
-                xhr.abort();
-                // FIXED: Flash effect on cancel
-                el.style.transition = 'all 0.5s ease';
-                el.style.backgroundColor = 'rgba(255,255,255,0.9)';
-                el.style.boxShadow = '0 0 30px white';
-                
                 setTimeout(() => {
-                    el.style.opacity = '0';
-                    el.style.transform = 'scale(0.9)';
-                    setTimeout(() => {
-                        if(el.parentNode) el.parentNode.removeChild(el);
-                    }, 300);
-                }, 100);
-            });
-
-            xhr.open('POST', '/upload');
-            xhr.send(formData);
+                    if (!isCancel) {
+                        if (el.parentNode) el.parentNode.removeChild(el);
+                        if (callback) callback();
+                    } else {
+                        el.style.opacity = '0';
+                        el.style.transform = 'scale(0.9)';
+                        setTimeout(() => {
+                            if (el.parentNode) el.parentNode.removeChild(el);
+                        }, 300);
+                    }
+                }, isCancel ? 100 : 300);
+            }
         }
-    </script>
 
+        /**
+         * EventManager Class
+         * Handles global event delegation and UI interactions.
+         */
+        class EventManager {
+            constructor() {
+                this.initDelegation();
+                this.initHtmxHooks();
+            }
+
+            initDelegation() {
+                document.body.addEventListener('click', (e) => {
+                    const target = e.target;
+
+                    // Handle Refresh Button Rotation
+                    const refreshBtn = target.closest('#refresh-btn');
+                    if (refreshBtn) {
+                        this.rotateIcon(refreshBtn);
+                    }
+
+                    // Handle Queue Resume Animation Restart
+                    const resumeBtn = target.closest('[data-action="restart-anim"]');
+                    if (resumeBtn) {
+                        const row = resumeBtn.closest('.queue-card');
+                        if (row) {
+                            row.classList.remove('animate-entry');
+                            void row.offsetWidth; // Force reflow
+                            row.classList.add('animate-entry');
+                        }
+                    }
+
+                    // Handle Flash Effect for "Add to Queue"
+                    const flashBtn = target.closest('[data-action="flash-card"]');
+                    if (flashBtn) {
+                        const card = flashBtn.closest('.item-card');
+                        if (card) {
+                            card.classList.add('flash-white');
+                            setTimeout(() => card.classList.remove('flash-white'), 500);
+                        }
+                    }
+                });
+
+                // Range Input Sync
+                document.body.addEventListener('input', (e) => {
+                    if (e.target.classList.contains('range-sync')) {
+                        const output = e.target.previousElementSibling?.querySelector('output');
+                        if (output) output.value = e.target.value;
+                    }
+                });
+            }
+
+            rotateIcon(btn) {
+                const icon = btn.querySelector('i');
+                if (!icon) return;
+                const currentRot = parseInt(icon.dataset.rot || '0');
+                const newRot = currentRot + 180;
+                icon.dataset.rot = newRot;
+                icon.style.transform = `rotate(${newRot}deg)`;
+            }
+
+            initHtmxHooks() {
+                document.body.addEventListener('htmx:afterSwap', (evt) => {
+                    // Update Logo Energy State
+                    const processing = document.querySelector('[data-status="processing"]');
+                    const logo = document.getElementById("logo-enc");
+                    
+                    if (processing) {
+                        logo.classList.remove("text-transparent", "bg-clip-text", "bg-gradient-to-r", "from-indigo-400", "to-purple-400");
+                        logo.classList.add("logo-energy-active");
+                    } else {
+                        logo.classList.remove("logo-energy-active");
+                        logo.classList.add("text-transparent", "bg-clip-text", "bg-gradient-to-r", "from-indigo-400", "to-purple-400");
+                    }
+                });
+            }
+        }
+
+        // Initialize Application
+        document.addEventListener('DOMContentLoaded', () => {
+            new UploadManager('file-upload-input', 'active-uploads', 'upload-card-template');
+            new EventManager();
+        });
+    </script>
 </body>
 </html>

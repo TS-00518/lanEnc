@@ -1,4 +1,6 @@
 queue.db
 ffmpeg.exe
+ffprobe.exe
+*.mkv
 *.mp4
 \__pycache__
