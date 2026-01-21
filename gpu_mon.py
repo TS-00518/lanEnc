@@ -14,14 +14,28 @@ class GPUWatchdog:
     def __init__(self):
         # Track which PIDs we have explicitly paused
         self._paused_pids = set()
+        self.device_name = "Unknown GPU"
         
         try:
             pynvml.nvmlInit()
             self.handle = pynvml.nvmlDeviceGetHandleByIndex(GPU_INDEX)
             self.available = True
+            try:
+                name = pynvml.nvmlDeviceGetName(self.handle)
+                if isinstance(name, bytes):
+                    self.device_name = name.decode('utf-8')
+                else:
+                    self.device_name = str(name)
+                logger.info(f"GPU Detected: {self.device_name}")
+            except Exception as e:
+                logger.warning(f"Could not get GPU Name: {e}")
+                self.device_name = "NVIDIA GPU"
         except Exception as e:
             logger.error(f"Could not init NVML: {e}")
             self.available = False
+
+    def get_device_name(self):
+        return self.device_name
 
     def get_3d_load(self):
         if not self.available: return 0
